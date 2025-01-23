@@ -48,7 +48,7 @@ export const FloatingLogos = ({ isMinimized }: GameProps) => {
       setScore(0);
       speedMultiplierRef.current = 1;
     }
-  }, [isMinimized, gameActive]);
+  }, [isMinimized]);
 
   // Initialize logos
   const initializeLogos = () => {
@@ -182,7 +182,7 @@ export const FloatingLogos = ({ isMinimized }: GameProps) => {
       animationFrameId = requestAnimationFrame(updateLogos);
     }
 
-    return () => cancelAnimationFrame(animationId);
+    return () => cancelAnimationFrame(animationFrameId);
   }, [gameActive]);
 
   // Check if a point is inside the drawn path
@@ -242,7 +242,7 @@ export const FloatingLogos = ({ isMinimized }: GameProps) => {
             const captured = isPointInPath(logoCenter, drawPoints);
             if (captured) {
               // Handle each captured logo individually
-              handleLogoCapture();
+              handleLogoCapture(1);
             }
             return !captured;
           });
@@ -308,9 +308,11 @@ export const FloatingLogos = ({ isMinimized }: GameProps) => {
   }, [drawPoints]);
 
   // Update score and speed multiplier when capturing logos
-  const handleLogoCapture = () => {
+  const handleLogoCapture = (capturedCount: number) => {
+    // Increment score by exactly the number of logos captured
     setScore(prev => {
-      const newScore = prev + 1;
+      const newScore = prev + 1; // Count as 1 point per logo
+      // Update speed multiplier based on total score
       speedMultiplierRef.current = 1 + (newScore * SPEED_INCREASE);
       return newScore;
     });

@@ -26,27 +26,16 @@ const findAllImports = (importPath: string) => {
   return { error: `File not found: ${importPath}` };
 };
 
-// Add proper types instead of any
-interface CompilerInput {
-  language: string;
-  source: string;
-}
-
-interface CompilerOutput {
-  success: boolean;
-  data: Record<string, unknown>;
-}
-
-export async function POST(req: Request): Promise<Response> {
+export async function POST(req: Request) {
   try {
-    const body: CompilerInput = await req.json();
+    const { code, constructorArgs } = await req.json();
 
     // Create compiler input with remappings
     const input = {
       language: 'Solidity',
       sources: {
         'contract.sol': {
-          content: body.source
+          content: code
         }
       },
       settings: {
@@ -89,10 +78,15 @@ export async function POST(req: Request): Promise<Response> {
     const contractName = Object.keys(contractFile)[0];
     const contract = contractFile[contractName];
 
+    // Get constructor inputs from ABI
+    const constructorAbi = contract.abi.find((item: any) => item.type === 'constructor');
+    const constructorInputs = constructorAbi ? constructorAbi.inputs : [];
+
     return NextResponse.json({
       name: contractName,
       abi: contract.abi,
-      bytecode: contract.evm.bytecode.object
+      bytecode: contract.evm.bytecode.object,
+      constructorInputs // Return constructor input types for frontend validation
     });
   } catch (error: any) {
     console.error('Compilation error:', error);

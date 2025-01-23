@@ -96,19 +96,145 @@ const NetworkButtons = ({ onSelect }: { onSelect: (network: 'base-mainnet' | 'ba
   </div>
 );
 
-// Add type for any
-interface CompilationResult {
-  success: boolean;
-  data: Record<string, unknown>;
-}
+// Update the FloatingLogosBackground component
+const FloatingLogosBackground = () => {
+  const [logos, setLogos] = useState<Array<{
+    id: number;
+    x: number;
+    y: number;
+    size: number;
+    rotation: number;
+    speed: number;
+    direction: { x: number; y: number };
+    opacity: number;
+  }>>([]);
 
-// Update function signatures with proper types
-const handleCompilation = async (result: CompilationResult) => {
-  // ... rest of the code
-};
+  useEffect(() => {
+    // Create floating logos
+    const newLogos = [];
+    const numLogos = Math.floor((window.innerWidth * window.innerHeight) / (50000)); // Adjust density
 
-const formatMessage = (content: string, isFirstMessage = false) => {
-  // ... rest of the code
+    for (let i = 0; i < numLogos; i++) {
+      const size = 30 + Math.random() * 40; // Random size between 30-70px
+      newLogos.push({
+        id: i,
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        size,
+        rotation: Math.random() * 360,
+        speed: 0.3 + Math.random() * 0.4, // Random speed between 0.3 and 0.7
+        direction: {
+          x: Math.cos(Math.random() * Math.PI * 2),
+          y: Math.sin(Math.random() * Math.PI * 2)
+        },
+        opacity: 0.1 + Math.random() * 0.2 // Random opacity between 0.1 and 0.3
+      });
+    }
+    setLogos(newLogos);
+
+    // Animation loop
+    let animationFrameId: number;
+    const animate = () => {
+      setLogos(prevLogos => prevLogos.map(logo => {
+        let newX = logo.x + logo.direction.x * logo.speed;
+        let newY = logo.y + logo.direction.y * logo.speed;
+
+        // Bounce off viewport boundaries with padding
+        const padding = logo.size;
+        if (newX < -padding || newX > window.innerWidth + padding) {
+          logo.direction.x *= -1;
+          newX = logo.x;
+        }
+        if (newY < -padding || newY > window.innerHeight + padding) {
+          logo.direction.y *= -1;
+          newY = logo.y;
+        }
+
+        return {
+          ...logo,
+          x: newX,
+          y: newY,
+          rotation: logo.rotation + 0.2 * logo.speed
+        };
+      }));
+      animationFrameId = requestAnimationFrame(animate);
+    };
+    animate();
+
+    // Handle window resize
+    const handleResize = () => {
+      setLogos(prevLogos => {
+        const numLogos = Math.floor((window.innerWidth * window.innerHeight) / (50000));
+        if (prevLogos.length < numLogos) {
+          const newLogos = [...prevLogos];
+          for (let i = prevLogos.length; i < numLogos; i++) {
+            const size = 30 + Math.random() * 40;
+            newLogos.push({
+              id: i,
+              x: Math.random() * window.innerWidth,
+              y: Math.random() * window.innerHeight,
+              size,
+              rotation: Math.random() * 360,
+              speed: 0.3 + Math.random() * 0.4,
+              direction: {
+                x: Math.cos(Math.random() * Math.PI * 2),
+                y: Math.sin(Math.random() * Math.PI * 2)
+              },
+              opacity: 0.1 + Math.random() * 0.2
+            });
+          }
+          return newLogos;
+        }
+        return prevLogos.slice(0, numLogos);
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
+
+  // Update the logo hover handler in FloatingLogosBackground
+  const handleLogoHover = (logo: { x: number; y: number, size: number }) => {
+    // Calculate center point of the logo
+    const centerX = logo.x + (logo.size / 2);
+    const centerY = logo.y + (logo.size / 2);
+    
+    // Dispatch custom event for cursor trail
+    const glowEvent = new CustomEvent('logo-glow', {
+      detail: { x: centerX, y: centerY }
+    });
+    document.dispatchEvent(glowEvent);
+  };
+
+  return (
+    <div className="logos-background">
+      {logos.map(logo => (
+        <div
+          key={logo.id}
+          className="floating-logo"
+          onMouseEnter={() => handleLogoHover(logo)}
+          style={{
+            left: `${logo.x}px`,
+            top: `${logo.y}px`,
+            width: `${logo.size}px`,
+            height: `${logo.size}px`,
+            transform: `rotate(${logo.rotation}deg)`,
+            opacity: logo.opacity,
+            transition: 'transform 0.3s ease-out, opacity 0.3s ease-out'
+          }}
+        >
+          <img
+            src="/base-logo.png"
+            alt="Base Logo"
+            className="w-full h-full object-contain"
+          />
+        </div>
+      ))}
+    </div>
+  );
 };
 
 export default function ChatBot() {
@@ -498,6 +624,74 @@ export default function ChatBot() {
       'DAO Contract': 'Decentralized Autonomous Organization contract with voting and proposal mechanisms.'
     };
     return descriptions[type] || 'Custom smart contract implementation.';
+  };
+
+  // Update the formatMessage function to include the network buttons
+  const formatMessage = (content: string, isFirstMessage: boolean) => {
+    if (isFirstMessage) {
+      return (
+        <div className="space-y-4">
+          <p className="text-gray-200 leading-relaxed font-light">
+            Which network would you like to deploy to?
+          </p>
+          <NetworkButtons 
+            onSelect={(network) => {
+              handleNetworkSelection(network);
+              const userMessage: Message = { role: 'user', content: network };
+              setMessages(prev => [...prev, userMessage]);
+              const assistantMessage: Message = {
+                role: 'assistant',
+                content: 'Great! Now, please enter your wallet address that will be the owner of the contract.'
+              };
+              setMessages(prev => [...prev, assistantMessage]);
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (content.includes('```solidity')) {
+      const [message, ...codeBlocks] = content.split('```solidity');
+      const code = codeBlocks.join('').replace('```', '').trim();
+      
+      return (
+        <div className="space-y-4">
+          {message && (
+            <p className="text-gray-200 leading-relaxed font-light">
+              {message}
+            </p>
+          )}
+          <div className="relative group">
+            <SyntaxHighlighter
+              language="solidity"
+              style={atomDark}
+              className="rounded-xl text-sm !bg-gray-900/50 !p-4 border border-gray-700/50 
+                backdrop-blur-sm shadow-lg"
+            >
+              {code}
+            </SyntaxHighlighter>
+            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => navigator.clipboard.writeText(code)}
+                className="p-2 rounded-lg bg-gray-800/50 hover:bg-gray-700/50 
+                  border border-gray-600/30 transition-all"
+                title="Copy code"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                  <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <p className="text-gray-200 leading-relaxed font-light whitespace-pre-line">
+        {content}
+      </p>
+    );
   };
 
   return (

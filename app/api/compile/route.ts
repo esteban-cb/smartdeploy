@@ -31,13 +31,13 @@ interface CompilerError {
   formattedMessage: string;
 }
 
-interface CompilerAPIResponse {
+type CompilerErrorResponse = {
   response?: {
     status: number;
     data: unknown;
   };
   message: string;
-}
+};
 
 export async function POST(req: Request) {
   try {
@@ -101,7 +101,7 @@ export async function POST(req: Request) {
       bytecode: contract.evm.bytecode.object,
       constructorInputs // Return constructor input types for frontend validation
     });
-  } catch (error: CompilerAPIResponse) {
+  } catch (error: CompilerErrorResponse) {
     console.error('Compilation error:', error);
     return NextResponse.json({ 
       error: 'Compilation failed', 

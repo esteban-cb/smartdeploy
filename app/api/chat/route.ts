@@ -89,13 +89,14 @@ contract YourToken is ERC20, Ownable, ReentrancyGuard {
     }
 }`;
 
-interface XAIAPIResponse {
+// Update type name and usage
+type APIErrorResponse = {
   response?: {
     status: number;
     data: unknown;
   };
   message: string;
-}
+};
 
 export async function POST(request: Request) {
   try {
@@ -135,7 +136,7 @@ export async function POST(request: Request) {
     // Extract and return the response content
     return NextResponse.json(response.data.choices[0].message);
 
-  } catch (error: XAIAPIResponse) {
+  } catch (error: APIErrorResponse) {
     console.error('xAI API Error:', error.response?.data || error.message);
     
     if (error.response?.status === 401) {

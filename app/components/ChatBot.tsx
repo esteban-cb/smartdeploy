@@ -95,18 +95,14 @@ const NetworkButtons = ({ onSelect }: { onSelect: (network: 'base-mainnet' | 'ba
   </div>
 );
 
-// Add proper type for error handling
-interface APIError {
-  message: string;
-}
-
-// Add proper type for response data
-interface ContractResponse {
-  data: {
-    details?: string;
+// Update error type
+interface DeployError {
+  response?: {
+    data?: {
+      details?: string;
+    };
   };
   message: string;
-  includes: (text: string) => boolean;
 }
 
 export default function ChatBot() {
@@ -456,20 +452,16 @@ export default function ChatBot() {
 
       setStep('deploy');
 
-    } catch (error: ContractResponse) {
+    } catch (error: DeployError) {
       console.error('Error:', error);
       
       let errorMessage = 'Failed to deploy contract';
       if (error.response?.data?.details) {
         errorMessage = `Compilation error: ${error.response.data.details}`;
-      } else if (error.message.includes('user rejected')) {
-        errorMessage = 'Transaction was rejected in wallet. Please try again.';
-      } else if (error.message.includes('insufficient funds')) {
-        errorMessage = 'Insufficient funds for deployment. Please check your wallet balance.';
       } else if (error.message) {
         errorMessage = error.message;
       }
-
+      
       setToast({
         message: errorMessage,
         type: 'error'

@@ -31,9 +31,12 @@ interface CompilerError {
   formattedMessage: string;
 }
 
-interface ConstructorInput {
-  name: string;
-  type: string;
+interface APIResponse {
+  response?: {
+    status: number;
+    data: unknown;
+  };
+  message: string;
 }
 
 export async function POST(req: Request) {
@@ -98,7 +101,7 @@ export async function POST(req: Request) {
       bytecode: contract.evm.bytecode.object,
       constructorInputs // Return constructor input types for frontend validation
     });
-  } catch (error: APIError) {
+  } catch (error: APIResponse) {
     console.error('Compilation error:', error);
     return NextResponse.json({ 
       error: 'Compilation failed', 

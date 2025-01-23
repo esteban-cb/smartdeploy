@@ -2,8 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { createPublicClient, http } from 'viem';
-import { baseSepolia } from 'viem/chains';
 import { 
   WalletIsland,
   WalletAdvancedWalletActions,
@@ -100,6 +98,15 @@ const NetworkButtons = ({ onSelect }: { onSelect: (network: 'base-mainnet' | 'ba
 // Add proper type for error handling
 interface APIError {
   message: string;
+}
+
+// Add proper type for response data
+interface ContractResponse {
+  data: {
+    details?: string;
+  };
+  message: string;
+  includes: (text: string) => boolean;
 }
 
 export default function ChatBot() {
@@ -449,7 +456,7 @@ export default function ChatBot() {
 
       setStep('deploy');
 
-    } catch (error: APIError) {
+    } catch (error: ContractResponse) {
       console.error('Error:', error);
       
       let errorMessage = 'Failed to deploy contract';

@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 
+// Add proper type instead of any
+interface ChatResponse {
+  content: string;
+  role: string;
+}
+
 export async function POST(request: Request) {
   try {
     const { messages } = await request.json();
@@ -14,7 +20,7 @@ export async function POST(request: Request) {
     }
 
     // Call xAI API
-    const response = await axios.post(
+    const response: ChatResponse = await axios.post(
       'https://api.x.ai/v1/chat/completions',
       {
         messages: messages,

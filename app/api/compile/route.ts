@@ -26,16 +26,27 @@ const findAllImports = (importPath: string) => {
   return { error: `File not found: ${importPath}` };
 };
 
-export async function POST(req: Request) {
+// Add proper types instead of any
+interface CompilerInput {
+  language: string;
+  source: string;
+}
+
+interface CompilerOutput {
+  success: boolean;
+  data: Record<string, unknown>;
+}
+
+export async function POST(req: Request): Promise<Response> {
   try {
-    const { code } = await req.json();
+    const body: CompilerInput = await req.json();
 
     // Create compiler input with remappings
     const input = {
       language: 'Solidity',
       sources: {
         'contract.sol': {
-          content: code
+          content: body.source
         }
       },
       settings: {

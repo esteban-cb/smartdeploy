@@ -89,6 +89,15 @@ contract YourToken is ERC20, Ownable, ReentrancyGuard {
     }
 }`;
 
+// Add proper type for error
+interface APIError {
+  response?: {
+    status: number;
+    data: unknown;
+  };
+  message: string;
+}
+
 export async function POST(request: Request) {
   try {
     const { messages } = await request.json();
@@ -127,10 +136,9 @@ export async function POST(request: Request) {
     // Extract and return the response content
     return NextResponse.json(response.data.choices[0].message);
 
-  } catch (error: any) {
+  } catch (error: APIError) {
     console.error('xAI API Error:', error.response?.data || error.message);
     
-    // Handle specific error cases
     if (error.response?.status === 401) {
       return NextResponse.json(
         { error: 'Authentication error', details: 'Invalid API key' },

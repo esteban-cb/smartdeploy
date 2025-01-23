@@ -26,9 +26,19 @@ const findAllImports = (importPath: string) => {
   return { error: `File not found: ${importPath}` };
 };
 
+interface CompilerError {
+  severity: string;
+  formattedMessage: string;
+}
+
+interface ConstructorInput {
+  name: string;
+  type: string;
+}
+
 export async function POST(req: Request) {
   try {
-    const { code, constructorArgs } = await req.json();
+    const { code } = await req.json();
 
     // Create compiler input with remappings
     const input = {
@@ -57,11 +67,11 @@ export async function POST(req: Request) {
 
     // Check for errors
     if (output.errors) {
-      const errors = output.errors.filter((error: any) => error.severity === 'error');
+      const errors = output.errors.filter((error: CompilerError) => error.severity === 'error');
       if (errors.length > 0) {
         return NextResponse.json({ 
           error: 'Compilation failed', 
-          details: errors.map((e: any) => e.formattedMessage).join('\n') 
+          details: errors.map((e: CompilerError) => e.formattedMessage).join('\n') 
         }, { status: 400 });
       }
     }
@@ -79,7 +89,7 @@ export async function POST(req: Request) {
     const contract = contractFile[contractName];
 
     // Get constructor inputs from ABI
-    const constructorAbi = contract.abi.find((item: any) => item.type === 'constructor');
+    const constructorAbi = contract.abi.find((item: { type: string }) => item.type === 'constructor');
     const constructorInputs = constructorAbi ? constructorAbi.inputs : [];
 
     return NextResponse.json({
@@ -88,7 +98,7 @@ export async function POST(req: Request) {
       bytecode: contract.evm.bytecode.object,
       constructorInputs // Return constructor input types for frontend validation
     });
-  } catch (error: any) {
+  } catch (error: APIError) {
     console.error('Compilation error:', error);
     return NextResponse.json({ 
       error: 'Compilation failed', 

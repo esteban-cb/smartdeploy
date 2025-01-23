@@ -16,6 +16,7 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ethers } from 'ethers';
 import Draggable from 'react-draggable';
 import { FloatingLogos } from './FloatingLogos';
+import Image from 'next/image';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -226,9 +227,11 @@ const FloatingLogosBackground = () => {
             transition: 'transform 0.3s ease-out, opacity 0.3s ease-out'
           }}
         >
-          <img
+          <Image
             src="/base-logo.png"
             alt="Base Logo"
+            width={40}
+            height={40}
             className="w-full h-full object-contain"
           />
         </div>
@@ -237,13 +240,12 @@ const FloatingLogosBackground = () => {
   );
 };
 
-export default function ChatBot() {
-  // Create public client once
-  const publicClient = createPublicClient({
-    chain: baseSepolia,
-    transport: http()
-  });
+// Add proper type for error handling
+interface APIError {
+  message: string;
+}
 
+export default function ChatBot() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -463,12 +465,12 @@ export default function ChatBot() {
       }
 
       setMessages(prev => [...prev, nextAssistantMessage]);
-    } catch (error) {
+    } catch (error: APIError) {
       console.error('Error:', error);
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'An error occurred. Please try again.'
-      }]);
+      setToast({
+        message: 'Failed to process request. Please try again.',
+        type: 'error'
+      });
     } finally {
       setIsLoading(false);
     }
@@ -590,7 +592,7 @@ export default function ChatBot() {
 
       setStep('deploy');
 
-    } catch (error: any) {
+    } catch (error: APIError) {
       console.error('Error:', error);
       
       let errorMessage = 'Failed to deploy contract';

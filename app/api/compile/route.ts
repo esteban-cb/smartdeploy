@@ -31,13 +31,13 @@ interface CompilerError {
   formattedMessage: string;
 }
 
-type CompilerErrorResponse = {
+interface CompilerErrorResponse {
   response?: {
     status: number;
     data: unknown;
   };
   message: string;
-};
+}
 
 export async function POST(req: Request) {
   try {
@@ -101,11 +101,12 @@ export async function POST(req: Request) {
       bytecode: contract.evm.bytecode.object,
       constructorInputs // Return constructor input types for frontend validation
     });
-  } catch (error: CompilerErrorResponse) {
-    console.error('Compilation error:', error);
+  } catch (error) {
+    const err = error as CompilerErrorResponse;
+    console.error('Compilation error:', err);
     return NextResponse.json({ 
       error: 'Compilation failed', 
-      details: error.message || 'Unknown error occurred'
+      details: err.message || 'Unknown error occurred'
     }, { status: 500 });
   }
 } 

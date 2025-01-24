@@ -2,101 +2,55 @@ import { NextResponse } from 'next/server';
 import axios from 'axios';
 
 // Update the system prompt for better contract generation
-const systemPrompt = `Generate a complete Solidity smart contract with the following requirements:
-1. Use Solidity version 0.8.24
-2. Use @openzeppelin/contracts v4.9.5 properly:
-   - Import and use Ownable for access control
-   - Import and use ERC20 for token functionality
-   - Import and use ReentrancyGuard for security
-3. Constructor must be properly initialized:
-   - Initialize ERC20 with name and symbol
-   - Initialize Ownable with msg.sender
-   - Set forwardingAddress for self-destruct
-   Example constructor:
-   constructor(
-       string memory name_,
-       string memory symbol_,
-       address forwardingAddress_
-   ) ERC20(name_, symbol_) {
-       if(forwardingAddress_ == address(0)) revert InvalidAddress();
-       forwardingAddress = forwardingAddress_;
+const systemPrompt = `Generate a complete Solidity smart contract based on the user's description.
+Use Solidity version 0.8.24 and @openzeppelin/contracts v4.9.5.
+
+Important contract requirements:
+1. Use proper imports:
+   import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+   import "@openzeppelin/contracts/access/Ownable.sol";
+   import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+2. For ERC20 tokens, use this constructor pattern EXACTLY:
+   constructor() ERC20("TokenName", "SYMBOL") Ownable() {
+     // initialization code
    }
 
-4. Include self-destruct capability:
-   - Add a function that forwards ETH to a specified address and destroys the contract
-   - Only owner can call self-destruct
-   - Emit event before destruction
-5. For receive() function:
-   - Forward ETH to specified address
-   - Trigger self-destruct if configured
-   - Emit events for tracking
-6. Include proper error handling with custom errors:
-   error InvalidAddress();
-   error InvalidAmount();
-   error TransferFailed();
-   error SelfDestructNotEnabled();
+3. For non-ERC20 contracts that need Ownable, use this pattern:
+   constructor() Ownable() {
+     // initialization code
+   }
 
-7. Include events for important state changes:
-   event ContractDestroyed(address indexed destroyer, uint256 balance);
-   event ETHForwarded(address indexed to, uint256 amount);
+4. Variable types must be exact:
+   - Use uint256 for all number variables (not uint20, uint, etc.)
+   - Use address for wallet addresses
+   - Use bool for boolean values
+   - Use string for text
 
-Example structure:
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+5. For ETH balance operations:
+   uint256 balance = address(this).balance;  // Always use uint256 for balance
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+6. Include these for all contracts:
+   - Custom error declarations at the top
+   - Event declarations after errors
+   - Clear comments for functions
+   - Proper access control modifiers
+   - Use 18 decimals for token amounts (1 token = 1e18)
 
-error InvalidAddress();
-error InvalidAmount();
-error TransferFailed();
-error SelfDestructNotEnabled();
+IMPORTANT NOTES:
+- Always call Ownable() in constructor when inheriting
+- Always use uint256 for numbers
+- Always check for integer overflow
+- Include proper events for all state changes
+- Use require or custom errors for validation`;
 
-contract YourToken is ERC20, Ownable, ReentrancyGuard {
-    event ContractDestroyed(address indexed destroyer, uint256 balance);
-    event ETHForwarded(address indexed to, uint256 amount);
-
-    address public immutable forwardingAddress;
-    bool public selfDestructEnabled;
-
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        address forwardingAddress_
-    ) ERC20(name_, symbol_) {
-        if(forwardingAddress_ == address(0)) revert InvalidAddress();
-        forwardingAddress = forwardingAddress_;
-    }
-
-    function enableSelfDestruct() external onlyOwner {
-        selfDestructEnabled = true;
-    }
-
-    function destroyContract() external onlyOwner {
-        if(!selfDestructEnabled) revert SelfDestructNotEnabled();
-        uint256 balance = address(this).balance;
-        emit ContractDestroyed(msg.sender, balance);
-        selfdestruct(payable(forwardingAddress));
-    }
-
-    receive() external payable {
-        if (selfDestructEnabled) {
-            uint256 amount = msg.value;
-            emit ETHForwarded(forwardingAddress, amount);
-            selfdestruct(payable(forwardingAddress));
-        }
-    }
-}`;
-
-// Update type name and usage
-type APIErrorResponse = {
+interface APIErrorResponse {
   response?: {
     status: number;
     data: unknown;
   };
   message: string;
-};
+}
 
 export async function POST(request: Request) {
   try {
@@ -128,7 +82,7 @@ export async function POST(request: Request) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.XAI_API_KEY}`
+          'Authorization': 'Bearer ' + process.env.XAI_API_KEY
         }
       }
     );
@@ -136,17 +90,18 @@ export async function POST(request: Request) {
     // Extract and return the response content
     return NextResponse.json(response.data.choices[0].message);
 
-  } catch (error: APIErrorResponse) {
-    console.error('xAI API Error:', error.response?.data || error.message);
+  } catch (error) {
+    const err = error as APIErrorResponse;
+    console.error('xAI API Error:', err.response?.data || err.message);
     
-    if (error.response?.status === 401) {
+    if (err.response?.status === 401) {
       return NextResponse.json(
         { error: 'Authentication error', details: 'Invalid API key' },
         { status: 401 }
       );
     }
 
-    if (error.response?.status === 429) {
+    if (err.response?.status === 429) {
       return NextResponse.json(
         { error: 'Rate limit exceeded', details: 'Too many requests' },
         { status: 429 }
@@ -156,7 +111,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { 
         error: 'Failed to process request', 
-        details: error.message || 'Unknown error occurred'
+        details: err.message || 'Unknown error occurred'
       },
       { status: 500 }
     );

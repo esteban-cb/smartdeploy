@@ -14,7 +14,8 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ethers } from 'ethers';
 import Draggable from 'react-draggable';
 import { FloatingLogos } from './FloatingLogos';
-import Image from 'next/image';
+import ExamplePrompts from './ExamplePrompts';
+import { getAddress } from 'viem';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -28,22 +29,13 @@ interface ContractData {
   contractCode: string | null;
 }
 
-const CONTRACT_SUGGESTIONS = [
-  'ERC20 Token',
-  'ERC721 NFT',
-  'Custom Token with Governance',
-  'Multi-signature Wallet',
-  'Staking Contract',
-  'DAO Contract',
-];
-
-// Update the Toast component with a more playful design
+// Update the Toast component to use blue colors
 const Toast = ({ message, type = 'error', onClose }: { message: string; type?: 'error' | 'success'; onClose: () => void }) => (
   <div className={`fixed bottom-4 right-4 p-4 rounded-2xl backdrop-blur-md shadow-2xl 
     border border-opacity-30 animate-slide-up
     ${type === 'error' 
       ? 'bg-red-500/70 border-red-400 shadow-red-500/20' 
-      : 'bg-green-500/70 border-green-400 shadow-green-500/20'
+      : 'bg-blue-600/70 border-blue-400 shadow-blue-500/20'
     }`}>
     <div className="flex items-center gap-3">
       <span className={`text-sm font-medium text-white ${type === 'error' ? 'animate-subtle-pulse' : ''}`}>
@@ -118,8 +110,11 @@ export default function ChatBot() {
   const [step, setStep] = useState<'network' | 'owner' | 'type' | 'review' | 'deploy'>('network');
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(0.8);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [isContractFullyDisplayed, setIsContractFullyDisplayed] = useState(false);
+  const [isCompiling, setIsCompiling] = useState(false);
 
   // Add auto-scroll functionality
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -144,37 +139,61 @@ export default function ChatBot() {
     initialPrompt();
   });
 
-  const handleNetworkSelection = (input: string) => {
+  const handleNetworkSelection = async (input: string) => {
     const network = input.toLowerCase();
     if (network === 'base-mainnet' || network === 'base-sepolia') {
       setContractData(prev => ({ ...prev, network: network as 'base-mainnet' | 'base-sepolia' }));
       setStep('owner');
+
+      // Get connected wallet address if available
+      if (window.ethereum) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const signer = await provider.getSigner();
+          const address = await signer.getAddress();
+          
+          // Only show the connected wallet message
+          setMessages(prev => [...prev, 
+            {
+              role: 'assistant',
+              content: `Connected wallet detected: ${address}\n\nWould you like to use this address as the contract owner? Type 'yes' to confirm, or enter a different address.`
+            }
+          ]);
+          
+          // Pre-fill the input with the connected address
+          setInput(address);
+        } catch (error) {
+          // If we can't get the address, show a simple prompt
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: 'Please enter the wallet address that will be the contract owner.'
+          }]);
+        }
+      }
       return true;
     }
     return false;
   };
 
   const handleOwnerAddress = (input: string) => {
-    if (ethers.isAddress(input)) {
-      setContractData(prev => ({ ...prev, ownerAddress: input }));
+    try {
+      // Use viem's getAddress to validate and checksum the address
+      const checksummedAddress = getAddress(input);
+      setContractData(prev => ({ ...prev, ownerAddress: checksummedAddress }));
       setStep('type');
       return true;
+    } catch (error) {
+      setToast({
+        message: 'Invalid Ethereum address format',
+        type: 'error'
+      });
+      return false;
     }
-    return false;
   };
 
   const handleContractTypeInput = async (input: string) => {
-    if (input.toLowerCase() === 'custom') {
-      setContractData(prev => ({ ...prev, contractType: 'Custom' }));
-      return {
-        isValid: true,
-        message: `Please describe the type of contract you want to create. Here are some suggestions:\n\n${CONTRACT_SUGGESTIONS.map(s => `- ${s}`).join('\n')}\n\nPlease provide specific details about functionality, access controls, and any special features you need.`
-      };
-    }
-
-    // For custom contract description, don't update the type
-    if (contractData.contractType === 'Custom') {
-      // Generate contract based on description
+    setIsCompiling(true);
+    try {
       const response = await axios.post('/api/chat', {
         messages: [
           {
@@ -185,17 +204,33 @@ export default function ChatBot() {
       });
       
       const contractCode = response.data.content;
-      setContractData(prev => ({ ...prev, contractCode }));
+      setContractData(prev => ({ ...prev, contractType: 'Custom', contractCode }));
       setStep('review');
+      setIsContractFullyDisplayed(false); // Reset display state
+      
+      // Add the contract to messages
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Here is your contract for review:\n\n```solidity\n' + contractCode + '\n```\n\nPlease review the contract carefully before deploying.'
+      }]);
+
       return {
         isValid: true,
-        message: 'Here is your contract for review:\n\n```solidity\n' + contractCode + '\n```\n\nWould you like to deploy this contract? Make sure you have enough funds to cover the deployment gas fees.'
+        message: null // Don't return a message since we're handling it directly
       };
+    } catch (error) {
+      console.error('Error:', error);
+      setToast({
+        message: 'Failed to generate contract. Please try again.',
+        type: 'error'
+      });
+      return {
+        isValid: false,
+        message: null
+      };
+    } finally {
+      setIsCompiling(false);
     }
-
-    // For non-custom types, set the contract type normally
-    setContractData(prev => ({ ...prev, contractType: input }));
-    return { isValid: true, message: null };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -226,13 +261,26 @@ export default function ChatBot() {
           break;
 
         case 'owner':
-          if (handleOwnerAddress(input)) {
+          if (input.toLowerCase() === 'yes' && window.ethereum) {
+            // Use the connected wallet address
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const rawAddress = await signer.getAddress();
+            const address = getAddress(rawAddress); // Ensure proper checksum
+            
+            if (handleOwnerAddress(address)) {
+              nextAssistantMessage = {
+                role: 'assistant',
+                content: 'Please describe the contract you want to create in as much detail as possible...'
+              };
+              setStep('type');
+            }
+          } else if (handleOwnerAddress(input)) {
             nextAssistantMessage = {
               role: 'assistant',
-              content: `What type of contract would you like to create? You can choose from:\n\n${
-                CONTRACT_SUGGESTIONS.map(s => `- ${s}`).join('\n')
-              }\n\nOr type "custom" for a custom contract.`
+              content: 'Please describe the contract you want to create in as much detail as possible...'
             };
+            setStep('type');
           } else {
             nextAssistantMessage = {
               role: 'assistant',
@@ -244,75 +292,14 @@ export default function ChatBot() {
         case 'type':
           const result = await handleContractTypeInput(input);
           if (result.isValid) {
-            setContractData(prev => ({ ...prev, contractType: input }));
-            
-            if (result.message) {
-              nextAssistantMessage = {
-                role: 'assistant',
-                content: result.message
-              };
-            } else {
-              // Generate contract based on type
-              const response = await axios.post('/api/chat', {
-                messages: [
-                  ...messages,
-                  userMessage,
-                  {
-                    role: 'system',
-                    content: `Generate a simple Solidity smart contract of type ${input}. 
-                    Requirements:
-                    1. Use Solidity version 0.8.24
-                    2. Use @openzeppelin/contracts v4.9.5 imports
-                    3. For Ownable contracts, use 'Ownable()' constructor without parameters
-                    4. For time-based operations, use block.timestamp
-                    5. For ERC20/ERC721:
-                       - Use standard constructor with name and symbol parameters
-                       - Example: constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
-                    6. Keep the contract simple and focused on core functionality
-                    7. Use standard Solidity syntax (no experimental features)
-                    8. For receive() functions, only use msg.value checks
-                    9. Use events for important state changes
-                    10. Follow OpenZeppelin patterns
-
-                    Example format:
-                    // SPDX-License-Identifier: MIT
-                    pragma solidity ^0.8.24;
-
-                    import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-                    import "@openzeppelin/contracts/access/Ownable.sol";
-
-                    contract MyToken is ERC20, Ownable {
-                        event Received(address indexed sender, uint256 amount);
-
-                        constructor(string memory name, string memory symbol) 
-                            ERC20(name, symbol) 
-                            Ownable()
-                        {}
-
-                        receive() external payable {
-                            emit Received(msg.sender, msg.value);
-                        }
-
-                        function mint(address to, uint256 amount) public onlyOwner {
-                            _mint(to, amount);
-                        }
-                    }`
-                  }
-                ]
-              });
-              
-              const contractCode = response.data.content;
-              setContractData(prev => ({ ...prev, contractCode }));
-              setStep('review');
-              nextAssistantMessage = {
-                role: 'assistant',
-                content: 'Here is your contract for review:\n\n```solidity\n' + contractCode + '\n```\n\nWould you like to deploy this contract? Make sure you have enough funds to cover the deployment gas fees.'
-              };
-            }
+            nextAssistantMessage = {
+              role: 'assistant',
+              content: result.message
+            };
           } else {
             nextAssistantMessage = {
               role: 'assistant',
-              content: 'Please select a valid contract type or type "custom" for a custom contract.'
+              content: 'Please provide a detailed description of the contract you want to create.'
             };
           }
           break;
@@ -325,7 +312,7 @@ export default function ChatBot() {
       }
 
       setMessages(prev => [...prev, nextAssistantMessage]);
-    } catch (error: APIError) {
+    } catch (error) {
       console.error('Error:', error);
       setToast({
         message: 'Failed to process request. Please try again.',
@@ -337,83 +324,74 @@ export default function ChatBot() {
   };
 
   const handleDeploy = async () => {
-    if (!contractData.contractCode || !window.ethereum) {
-      setToast({
-        message: 'Please connect your wallet first',
-        type: 'error'
-      });
-      return;
-    }
+    if (!contractData.contractCode || !window.ethereum) return;
+
+    setIsDeploying(true);
+    setToast({
+      message: 'Please confirm the transaction in your wallet...',
+      type: 'success'
+    });
 
     try {
-      setIsLoading(true);
+      // First compile the contract
+      const response = await axios.post('/api/compile', {
+        code: extractSolidityCode(contractData.contractCode)
+      });
 
-      // First, request network switch to Base Sepolia
-      try {
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: '0x14a34' }], // 84532 in hex
-        });
-      } catch (switchError: any) {
-        if (switchError.code === 4902) {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: '0x14a34', // 84532 in hex
-              chainName: 'Base Sepolia',
-              nativeCurrency: {
-                name: 'ETH',
-                symbol: 'ETH',
-                decimals: 18
-              },
-              rpcUrls: ['https://sepolia.base.org'],
-              blockExplorerUrls: ['https://sepolia.basescan.org']
-            }]
-          });
-        } else {
-          throw switchError;
-        }
-      }
+      const { abi, bytecode, name, constructorInputs } = response.data;
 
-      // Get the signer after ensuring we're on the right network
+      // Get wallet address
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
 
-      // Extract and compile the contract
-      const solidityCode = extractSolidityCode(contractData.contractCode);
-      const compileResponse = await axios.post('/api/compile', {
-        code: solidityCode
-      });
-
-      const { abi, bytecode, name } = compileResponse.data;
-
-      setToast({
-        message: 'Please confirm the transaction in your wallet...',
-        type: 'success'
-      });
-
       // Create contract factory
       const factory = new ethers.ContractFactory(abi, bytecode, signer);
 
-      // Deploy the contract
-      const contract = await factory.deploy(
-        ...(contractData.contractType?.toLowerCase() === 'erc20' 
-          ? ["MyToken", "MTK"] 
-          : contractData.contractType?.toLowerCase() === 'erc721'
-          ? ["MyNFT", "MNFT"]
-          : [])
-      );
+      // Smart constructor argument handling
+      let constructorArgs = [];
+      if (constructorInputs && constructorInputs.length > 0) {
+        // Check if it's a token contract by looking at the constructor inputs
+        const isTokenContract = constructorInputs.some(input => 
+          input.name.toLowerCase().includes('name') || 
+          input.name.toLowerCase().includes('symbol')
+        );
 
-      setToast({
-        message: 'Waiting for deployment confirmation...',
-        type: 'success'
-      });
+        if (isTokenContract) {
+          // For token contracts, use default values
+          constructorArgs = constructorInputs.map(input => {
+            if (input.name.toLowerCase().includes('name')) return name;
+            if (input.name.toLowerCase().includes('symbol')) return name.slice(0, 4).toUpperCase();
+            if (input.type === 'address') return address; // Use deployer address for any address params
+            if (input.type === 'uint256') return '1000000000000000000000000'; // Default supply: 1M tokens
+            return ''; // Default empty string for unknown params
+          });
+        } else {
+          // For non-token contracts, extract values from the contract description
+          const description = contractData.contractCode.toLowerCase();
+          constructorArgs = constructorInputs.map(input => {
+            if (input.type === 'address') {
+              // Try to find addresses in the description
+              const addressMatch = description.match(/0x[a-fA-F0-9]{40}/);
+              return addressMatch ? addressMatch[0] : address;
+            }
+            if (input.type === 'uint256') {
+              // Try to find numbers in the description
+              const numberMatch = description.match(/\b\d+\b/);
+              return numberMatch ? numberMatch[0] : '0';
+            }
+            return ''; // Default empty string for unknown params
+          });
+        }
+      }
 
-      // Wait for deployment
-      await contract.waitForDeployment();
-      const deployedAddress = await contract.getAddress();
+      // Deploy the contract with constructor arguments
+      const contract = await factory.deploy(...constructorArgs);
       const deploymentTx = contract.deploymentTransaction();
+      
+      // Wait for deployment
+      const deployedContract = await contract.waitForDeployment();
+      const deployedAddress = await deployedContract.getAddress();
 
       // Store contract info
       const contractInfo = {
@@ -430,6 +408,7 @@ export default function ChatBot() {
       savedContracts.push(contractInfo);
       localStorage.setItem('deployedContracts', JSON.stringify(savedContracts));
 
+      // Update messages with success
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `✨ Contract successfully deployed! 🎉\n\n` +
@@ -438,10 +417,6 @@ export default function ChatBot() {
                 `🌐 Network: ${contractData.network}\n` +
                 `👤 Deployed by: \`${address}\`\n` +
                 `🔗 Transaction: \`${deploymentTx?.hash}\`\n\n` +
-                `Contract Functionality:\n` +
-                `${contractData.contractType === 'custom' ? 
-                  contractData.customDescription : 
-                  getContractDescription(contractData.contractType)}\n\n` +
                 `You can interact with your contract using the deployed address and ABI.`
       }]);
 
@@ -452,14 +427,15 @@ export default function ChatBot() {
 
       setStep('deploy');
 
-    } catch (error: DeployError) {
-      console.error('Error:', error);
+    } catch (error) {
+      const err = error as DeployError;
+      console.error('Error:', err);
       
       let errorMessage = 'Failed to deploy contract';
-      if (error.response?.data?.details) {
-        errorMessage = `Compilation error: ${error.response.data.details}`;
-      } else if (error.message) {
-        errorMessage = error.message;
+      if (err.response?.data?.details) {
+        errorMessage = `Compilation error: ${err.response.data.details}`;
+      } else if (err.message) {
+        errorMessage = err.message;
       }
       
       setToast({
@@ -467,13 +443,13 @@ export default function ChatBot() {
         type: 'error'
       });
     } finally {
-      setIsLoading(false);
+      setIsDeploying(false);
     }
   };
 
   // Add this helper function
   const getContractDescription = (type: string): string => {
-    const descriptions: { [key: string]: string } = {
+    const descriptions: Record<string, string> = {
       'ERC20': 'Standard ERC20 token with basic functionality including transfers, allowances, and minting.',
       'ERC721': 'NFT contract with minting, transfers, and metadata support.',
       'Custom Token with Governance': 'Token contract with governance features for decentralized decision making.',
@@ -484,7 +460,7 @@ export default function ChatBot() {
     return descriptions[type] || 'Custom smart contract implementation.';
   };
 
-  // Update the formatMessage function to include the network buttons
+  // Update the formatMessage function
   const formatMessage = (content: string, isFirstMessage: boolean) => {
     if (isFirstMessage) {
       return (
@@ -497,13 +473,63 @@ export default function ChatBot() {
               handleNetworkSelection(network);
               const userMessage: Message = { role: 'user', content: network };
               setMessages(prev => [...prev, userMessage]);
-              const assistantMessage: Message = {
-                role: 'assistant',
-                content: 'Great! Now, please enter your wallet address that will be the owner of the contract.'
-              };
-              setMessages(prev => [...prev, assistantMessage]);
             }}
           />
+        </div>
+      );
+    }
+
+    // For contract description prompt
+    if (content.includes('Please describe the contract you want to create')) {
+      return (
+        <div className="space-y-4">
+          <p className="text-gray-200 leading-relaxed font-light">
+            {content}
+          </p>
+          <ExamplePrompts 
+            onSelectPrompt={(template) => {
+              setInput(template); // Just populate the input
+            }}
+            onPopulateInput={(template) => {
+              setInput(template); // This is redundant now, we can remove this prop
+            }}
+          />
+        </div>
+      );
+    }
+
+    // Add restart option after successful deployment
+    if (content.includes('Contract successfully deployed!')) {
+      return (
+        <div className="space-y-4">
+          <div className="text-gray-200 leading-relaxed font-light whitespace-pre-line">
+            {content}
+          </div>
+          <button
+            onClick={() => {
+              // Reset all states
+              setMessages([{
+                role: 'assistant',
+                content: 'Which network would you like to deploy to?'
+              }]);
+              setContractData({
+                network: null,
+                ownerAddress: null,
+                contractType: null,
+                contractCode: null,
+              });
+              setStep('network');
+              setInput('');
+            }}
+            className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 
+              text-white rounded-xl font-semibold text-lg
+              hover:shadow-lg hover:shadow-blue-500/25 
+              transform hover:scale-[1.01] active:scale-[0.99]
+              transition-all duration-200
+              border border-blue-500/20 backdrop-blur-xl"
+          >
+            Deploy Another Contract
+          </button>
         </div>
       );
     }
@@ -511,6 +537,9 @@ export default function ChatBot() {
     if (content.includes('```solidity')) {
       const [message, ...codeBlocks] = content.split('```solidity');
       const code = codeBlocks.join('').replace('```', '').trim();
+      
+      // Set contract as fully displayed after a small delay to ensure rendering
+      setTimeout(() => setIsContractFullyDisplayed(true), 100);
       
       return (
         <div className="space-y-4">
@@ -552,6 +581,30 @@ export default function ChatBot() {
     );
   };
 
+  // Optional: Add a function to handle template parameter replacement
+  const handleTemplateEdit = (template: string) => {
+    // Replace template parameters with actual values
+    return template
+      .replace('{YOUR_ADDRESS}', contractData.ownerAddress || 'your_address')
+      .replace('{TOKEN_NAME}', 'your_token_name')
+      .replace('{SUPPLY}', 'token_supply')
+      .replace('{ADDRESS_A}', contractData.ownerAddress || 'address_a')
+      .replace('{ADDRESS_B}', 'address_b');
+  };
+
+  // Add new state for tracking scroll position
+  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Add scroll handler
+  const handleScroll = () => {
+    if (messagesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+      const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50; // 50px threshold
+      setHasScrolledToBottom(isAtBottom);
+    }
+  };
+
   return (
     <div className="relative min-h-screen">
       {/* Background */}
@@ -574,7 +627,7 @@ export default function ChatBot() {
         onStop={(e, data) => setPosition({ x: data.x, y: data.y })}
       >
         <div className={`fixed z-10 transition-all duration-300 ${
-          isMinimized ? 'w-72' : 'w-[800px]'
+          isMinimized ? 'w-72' : 'w-[900px]'
         }`}>
           <div className="chat-content">
             <div className="rounded-2xl shadow-2xl backdrop-blur-xl bg-gray-900/50 border border-gray-700/50 
@@ -629,7 +682,11 @@ export default function ChatBot() {
               {!isMinimized && (
                 <>
                   {/* Chat Messages */}
-                  <div className="h-[36rem] overflow-y-auto p-6 space-y-6 scanline">
+                  <div 
+                    ref={messagesContainerRef}
+                    onScroll={handleScroll}
+                    className="h-[36rem] overflow-y-auto p-6 space-y-6 scanline"
+                  >
                     {messages.map((message, index) => (
                       <div
                         key={index}
@@ -665,12 +722,15 @@ export default function ChatBot() {
                     )}
                   </div>
 
-                  {/* Deploy Button */}
-                  {step === 'review' && contractData.contractCode && (
-                    <div className="px-6 py-4 bg-gray-800/30 border-t border-gray-700/50">
+                  {/* Deploy Button - Only show when scrolled to bottom */}
+                  {step === 'review' && 
+                    contractData.contractCode && 
+                    isContractFullyDisplayed && 
+                    hasScrolledToBottom && (
+                    <div className="animate-fade-in px-6 py-4 bg-gray-800/30 border-t border-gray-700/50">
                       <button
                         onClick={handleDeploy}
-                        disabled={!window.ethereum}
+                        disabled={!window.ethereum || isDeploying}
                         className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 
                           text-white rounded-xl font-semibold text-lg
                           hover:shadow-lg hover:shadow-blue-500/25 
@@ -680,8 +740,21 @@ export default function ChatBot() {
                           border border-blue-500/20 backdrop-blur-xl
                           relative overflow-hidden group"
                       >
-                        <span className="relative z-10 group-hover:text-white/90 transition-colors">
-                          {window.ethereum ? 'Deploy Contract' : 'Please Connect Wallet'}
+                        <span className="relative z-10 group-hover:text-white/90 transition-colors flex items-center justify-center gap-3">
+                          {isDeploying ? (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce"></div>
+                                <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce [animation-delay:-.15s]"></div>
+                                <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce [animation-delay:-.3s]"></div>
+                              </div>
+                              <span>Waiting for Wallet...</span>
+                            </>
+                          ) : window.ethereum ? (
+                            'Deploy Contract'
+                          ) : (
+                            'Please Connect Wallet'
+                          )}
                         </span>
                         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-blue-600/0 via-blue-500/40 to-blue-600/0 
                           translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000">
@@ -690,44 +763,58 @@ export default function ChatBot() {
                     </div>
                   )}
 
-                  {/* Input Form */}
-                  <form onSubmit={handleSubmit} className="p-6 border-t border-gray-700/50 bg-gray-800/30">
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        className="flex-1 p-4 rounded-xl bg-gray-900/50 border border-gray-700/50 
-                          text-white placeholder-gray-400 backdrop-blur-xl
-                          focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent
-                          transition-all duration-200 hover:border-gray-600/50"
-                        placeholder={
-                          step === 'network'
-                            ? 'Enter network (base-mainnet or base-sepolia)'
-                            : step === 'owner'
-                            ? 'Enter owner wallet address'
-                            : 'Enter your message...'
-                        }
-                      />
-                      <button
-                        type="submit"
-                        disabled={isLoading}
-                        className="px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 
-                          text-white rounded-xl font-semibold
-                          hover:shadow-lg hover:shadow-blue-500/25 
-                          transform hover:scale-[1.02] active:scale-[0.98]
-                          transition-all duration-200
-                          disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none
-                          border border-blue-500/20 backdrop-blur-xl
-                          relative overflow-hidden group"
-                      >
-                        <span className="relative z-10 group-hover:text-white/90">Send</span>
-                        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-blue-600/0 via-blue-500/40 to-blue-600/0 
-                          translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000">
-                        </div>
-                      </button>
+                  {/* Scroll indicator - Always show when contract is displayed but not scrolled */}
+                  {step === 'review' && 
+                    contractData.contractCode && 
+                    isContractFullyDisplayed && 
+                    !hasScrolledToBottom && (
+                    <div className="sticky bottom-0 px-6 py-4 bg-gray-800/95 border-t border-gray-700/50 backdrop-blur-xl">
+                      <div className="text-center text-gray-400 text-sm animate-bounce">
+                        Scroll to bottom to review and deploy ↓
+                      </div>
                     </div>
-                  </form>
+                  )}
+
+                  {/* Input Form - Only show if not in review or deploy step */}
+                  {step !== 'review' && step !== 'deploy' && (
+                    <form onSubmit={handleSubmit} className="p-6 border-t border-gray-700/50 bg-gray-800/30">
+                      <div className="flex gap-3">
+                        <textarea
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          rows={4}
+                          className="flex-1 p-4 rounded-xl bg-gray-900/50 border border-gray-700/50 
+                            text-white placeholder-gray-400 backdrop-blur-xl
+                            focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent
+                            transition-all duration-200 hover:border-gray-600/50 resize-none"
+                          placeholder={
+                            step === 'network'
+                              ? 'Enter network (base-mainnet or base-sepolia)'
+                              : step === 'owner'
+                              ? 'Enter owner wallet address'
+                              : 'Enter your message or select a template above...'
+                          }
+                        />
+                        <button
+                          type="submit"
+                          disabled={isLoading}
+                          className="px-8 self-end bg-gradient-to-r from-blue-600 to-blue-700 
+                            text-white rounded-xl font-semibold h-[52px]
+                            hover:shadow-lg hover:shadow-blue-500/25 
+                            transform hover:scale-[1.02] active:scale-[0.98]
+                            transition-all duration-200
+                            disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none
+                            border border-blue-500/20 backdrop-blur-xl
+                            relative overflow-hidden group"
+                        >
+                          <span className="relative z-10 group-hover:text-white/90">Send</span>
+                          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-blue-600/0 via-blue-500/40 to-blue-600/0 
+                            translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000">
+                          </div>
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </>
               )}
             </div>

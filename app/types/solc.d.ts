@@ -1,4 +1,8 @@
 declare module 'solc' {
+  interface ImportCallback {
+    import: (path: string) => { contents: string } | { error: string };
+  }
+
   interface CompilerInput {
     language: 'Solidity';
     sources: {
@@ -40,11 +44,11 @@ declare module 'solc' {
   }
 
   interface Compiler {
-    compile: (input: string) => string;
+    compile: (input: string, callback?: ImportCallback) => string;
   }
 
   const solc: {
-    compile: (input: string) => string;
+    compile: (input: string, callback?: ImportCallback) => string;
     loadRemoteVersion: (version: string, callback: (err: Error | null, compiler?: Compiler) => void) => void;
   };
 

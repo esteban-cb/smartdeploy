@@ -16,7 +16,7 @@ const findOpenZeppelinContract = (path: string): string | null => {
 };
 
 // Helper to get all imported files
-const findAllImports = (importPath: string) => {
+const findImports = (importPath: string): { contents: string } | { error: string } => {
   if (importPath.startsWith('@openzeppelin/')) {
     const contents = findOpenZeppelinContract(importPath);
     if (contents) {
@@ -63,7 +63,9 @@ export async function POST(request: Request) {
       }
     };
 
-    const output = JSON.parse(solc.compile(JSON.stringify(input))) as solc.CompilerOutput;
+    const output = JSON.parse(
+      solc.compile(JSON.stringify(input), { import: findImports })
+    ) as solc.CompilerOutput;
 
     if (output.errors?.some(error => error.severity === 'error')) {
       const errorMessage = output.errors

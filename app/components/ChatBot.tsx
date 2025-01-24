@@ -114,7 +114,6 @@ export default function ChatBot() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDeploying, setIsDeploying] = useState(false);
   const [isContractFullyDisplayed, setIsContractFullyDisplayed] = useState(false);
-  const [isCompiling, setIsCompiling] = useState(false);
 
   // Add auto-scroll functionality
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -177,12 +176,11 @@ export default function ChatBot() {
 
   const handleOwnerAddress = (input: string) => {
     try {
-      // Use viem's getAddress to validate and checksum the address
       const checksummedAddress = getAddress(input);
       setContractData(prev => ({ ...prev, ownerAddress: checksummedAddress }));
       setStep('type');
       return true;
-    } catch (error) {
+    } catch {
       setToast({
         message: 'Invalid Ethereum address format',
         type: 'error'
@@ -192,7 +190,6 @@ export default function ChatBot() {
   };
 
   const handleContractTypeInput = async (input: string) => {
-    setIsCompiling(true);
     try {
       const response = await axios.post('/api/chat', {
         messages: [
@@ -206,9 +203,8 @@ export default function ChatBot() {
       const contractCode = response.data.content;
       setContractData(prev => ({ ...prev, contractType: 'Custom', contractCode }));
       setStep('review');
-      setIsContractFullyDisplayed(false); // Reset display state
+      setIsContractFullyDisplayed(false);
       
-      // Add the contract to messages
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: 'Here is your contract for review:\n\n```solidity\n' + contractCode + '\n```\n\nPlease review the contract carefully before deploying.'
@@ -216,10 +212,10 @@ export default function ChatBot() {
 
       return {
         isValid: true,
-        message: null // Don't return a message since we're handling it directly
+        message: null
       };
-    } catch (error) {
-      console.error('Error:', error);
+    } catch {
+      console.error('Failed to generate contract');
       setToast({
         message: 'Failed to generate contract. Please try again.',
         type: 'error'
@@ -228,8 +224,6 @@ export default function ChatBot() {
         isValid: false,
         message: null
       };
-    } finally {
-      setIsCompiling(false);
     }
   };
 
@@ -447,19 +441,6 @@ export default function ChatBot() {
     }
   };
 
-  // Add this helper function
-  const getContractDescription = (type: string): string => {
-    const descriptions: Record<string, string> = {
-      'ERC20': 'Standard ERC20 token with basic functionality including transfers, allowances, and minting.',
-      'ERC721': 'NFT contract with minting, transfers, and metadata support.',
-      'Custom Token with Governance': 'Token contract with governance features for decentralized decision making.',
-      'Multi-signature Wallet': 'Wallet requiring multiple signatures for transaction approval.',
-      'Staking Contract': 'Contract for staking tokens and earning rewards.',
-      'DAO Contract': 'Decentralized Autonomous Organization contract with voting and proposal mechanisms.'
-    };
-    return descriptions[type] || 'Custom smart contract implementation.';
-  };
-
   // Update the formatMessage function
   const formatMessage = (content: string, isFirstMessage: boolean) => {
     if (isFirstMessage) {
@@ -579,17 +560,6 @@ export default function ChatBot() {
         {content}
       </p>
     );
-  };
-
-  // Optional: Add a function to handle template parameter replacement
-  const handleTemplateEdit = (template: string) => {
-    // Replace template parameters with actual values
-    return template
-      .replace('{YOUR_ADDRESS}', contractData.ownerAddress || 'your_address')
-      .replace('{TOKEN_NAME}', 'your_token_name')
-      .replace('{SUPPLY}', 'token_supply')
-      .replace('{ADDRESS_A}', contractData.ownerAddress || 'address_a')
-      .replace('{ADDRESS_B}', 'address_b');
   };
 
   // Add new state for tracking scroll position

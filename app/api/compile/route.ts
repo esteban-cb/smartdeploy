@@ -39,12 +39,11 @@ interface CompilerErrorResponse {
   message: string;
 }
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { code } = await req.json();
+    const { code } = await request.json();
 
-    // Create compiler input with remappings
-    const input = {
+    const input: solc.CompilerInput = {
       language: 'Solidity',
       sources: {
         'contract.sol': {
@@ -52,61 +51,46 @@ export async function POST(req: Request) {
         }
       },
       settings: {
+        outputSelection: {
+          '*': {
+            '*': ['abi', 'evm.bytecode']
+          }
+        },
         optimizer: {
           enabled: true,
           runs: 200
-        },
-        outputSelection: {
-          '*': {
-            '*': ['*']
-          }
-        },
-        evmVersion: 'paris'
+        }
       }
     };
 
-    // Use synchronous compilation
-    const output = JSON.parse(solc.compile(JSON.stringify(input), { import: findAllImports }));
+    const output = JSON.parse(solc.compile(JSON.stringify(input))) as solc.CompilerOutput;
 
-    // Check for errors
-    if (output.errors) {
-      const errors = output.errors.filter((error: CompilerError) => error.severity === 'error');
-      if (errors.length > 0) {
-        return NextResponse.json({ 
-          error: 'Compilation failed', 
-          details: errors.map((e: CompilerError) => e.formattedMessage).join('\n') 
-        }, { status: 400 });
-      }
+    if (output.errors?.some(error => error.severity === 'error')) {
+      const errorMessage = output.errors
+        .filter(error => error.severity === 'error')
+        .map(error => error.message)
+        .join('\n');
+
+      return NextResponse.json(
+        { error: 'Compilation error', details: errorMessage },
+        { status: 400 }
+      );
     }
 
-    // Get the contract
-    const contractFile = output.contracts['contract.sol'];
-    if (!contractFile || Object.keys(contractFile).length === 0) {
-      return NextResponse.json({ 
-        error: 'Compilation failed', 
-        details: 'No contract found in source' 
-      }, { status: 400 });
-    }
-
-    const contractName = Object.keys(contractFile)[0];
-    const contract = contractFile[contractName];
-
-    // Get constructor inputs from ABI
-    const constructorAbi = contract.abi.find((item: { type: string }) => item.type === 'constructor');
-    const constructorInputs = constructorAbi ? constructorAbi.inputs : [];
+    const contractFile = Object.keys(output.contracts['contract.sol'])[0];
+    const contract = output.contracts['contract.sol'][contractFile];
 
     return NextResponse.json({
-      name: contractName,
       abi: contract.abi,
       bytecode: contract.evm.bytecode.object,
-      constructorInputs // Return constructor input types for frontend validation
+      name: contractFile
     });
+
   } catch (error) {
-    const err = error as CompilerErrorResponse;
-    console.error('Compilation error:', err);
-    return NextResponse.json({ 
-      error: 'Compilation failed', 
-      details: err.message || 'Unknown error occurred'
-    }, { status: 500 });
+    console.error('Compilation error:', error);
+    return NextResponse.json(
+      { error: 'Failed to compile contract', details: (error as Error).message },
+      { status: 500 }
+    );
   }
 } 

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 declare module 'solc' {
   interface ImportCallback {
     (path: string): { contents: string } | { error: string };

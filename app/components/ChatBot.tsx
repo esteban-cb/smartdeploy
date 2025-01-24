@@ -2,13 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  WalletIsland,
-  WalletAdvancedWalletActions,
-  WalletAdvancedAddressDetails,
-  WalletAdvancedTransactionActions,
-  WalletAdvancedTokenHoldings
-} from '@coinbase/onchainkit/wallet';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ethers } from 'ethers';
@@ -16,6 +9,13 @@ import Draggable from 'react-draggable';
 import { FloatingLogos } from './FloatingLogos';
 import ExamplePrompts from './ExamplePrompts';
 import { getAddress } from 'viem';
+import { 
+  Wallet, 
+  ConnectWallet,
+  WalletDropdown,
+  WalletDropdownDisconnect 
+} from '@coinbase/onchainkit/wallet';
+import { Fragment, JsonFragment } from '@ethersproject/abi';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -27,6 +27,13 @@ interface ContractData {
   ownerAddress: string | null;
   contractType: string | null;
   contractCode: string | null;
+}
+
+interface CompileResponse {
+  abi: (string | Fragment | JsonFragment)[];
+  bytecode: string;
+  name: string;
+  constructorInputs: { name: string; type: string; }[];
 }
 
 // Update the Toast component to use blue colors
@@ -191,29 +198,34 @@ export default function ChatBot() {
 
   const handleContractTypeInput = async (input: string) => {
     try {
-      const response = await axios.post('/api/chat', {
-        messages: [
-          {
-            role: 'system',
-            content: `Generate a Solidity smart contract based on this description: ${input}`
-          }
-        ]
-      });
-      
-      const contractCode = response.data.content;
-      setContractData(prev => ({ ...prev, contractType: 'Custom', contractCode }));
-      setStep('review');
-      setIsContractFullyDisplayed(false);
-      
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'Here is your contract for review:\n\n```solidity\n' + contractCode + '\n```\n\nPlease review the contract carefully before deploying.'
-      }]);
+      const result = await handleContractTypeInput(input);
+      if (result.isValid) {
+        const response = await axios.post<CompileResponse>('/api/compile', {
+          code: extractSolidityCode(contractData.contractCode || '')
+        });
+        
+        const { abi, bytecode, name, constructorInputs } = response.data;
+        console.log('Contract compiled:', { abi, bytecode, name, constructorInputs });
+        
+        setContractData(prev => ({ ...prev, contractType: 'Custom', contractCode: input }));
+        setStep('review');
+        setIsContractFullyDisplayed(false);
+        
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Here is your contract for review:\n\n```solidity\n' + input + '\n```\n\nPlease review the contract carefully before deploying.'
+        }]);
 
-      return {
-        isValid: true,
-        message: null
-      };
+        return {
+          isValid: true,
+          message: null
+        };
+      } else {
+        return {
+          isValid: false,
+          message: null
+        };
+      }
     } catch {
       console.error('Failed to generate contract');
       setToast({
@@ -241,7 +253,7 @@ export default function ChatBot() {
 
       switch (step) {
         case 'network':
-          if (handleNetworkSelection(input)) {
+          if (await handleNetworkSelection(input)) {
             nextAssistantMessage = {
               role: 'assistant',
               content: 'Great! Now, please enter your wallet address that will be the owner of the contract.'
@@ -288,7 +300,7 @@ export default function ChatBot() {
           if (result.isValid) {
             nextAssistantMessage = {
               role: 'assistant',
-              content: result.message
+              content: result.message || 'Please describe the contract you want to create.'
             };
           } else {
             nextAssistantMessage = {
@@ -328,8 +340,8 @@ export default function ChatBot() {
 
     try {
       // First compile the contract
-      const response = await axios.post('/api/compile', {
-        code: extractSolidityCode(contractData.contractCode)
+      const response = await axios.post<CompileResponse>('/api/compile', {
+        code: extractSolidityCode(contractData.contractCode || '')
       });
 
       const { abi, bytecode, name, constructorInputs } = response.data;
@@ -343,7 +355,7 @@ export default function ChatBot() {
       const factory = new ethers.ContractFactory(abi, bytecode, signer);
 
       // Smart constructor argument handling
-      let constructorArgs = [];
+      let constructorArgs: (string | number)[] = [];
       if (constructorInputs && constructorInputs.length > 0) {
         // Check if it's a token contract by looking at the constructor inputs
         const isTokenContract = constructorInputs.some(input => 
@@ -792,14 +804,15 @@ export default function ChatBot() {
         </div>
       </Draggable>
 
-      {/* WalletIsland with higher z-index */}
+      {/* Replace the old wallet section with the proper Wallet component */}
       <div className="relative z-50">
-        <WalletIsland>
-          <WalletAdvancedWalletActions />
-          <WalletAdvancedAddressDetails />
-          <WalletAdvancedTransactionActions />
-          <WalletAdvancedTokenHoldings />
-        </WalletIsland>
+        <Wallet>
+          <ConnectWallet>
+            <WalletDropdown>
+              <WalletDropdownDisconnect />
+            </WalletDropdown>
+          </ConnectWallet>
+        </Wallet>
       </div>
 
       {/* Add the messages end ref */}

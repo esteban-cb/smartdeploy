@@ -306,8 +306,8 @@ export default function ChatBot() {
       }
 
       setMessages(prev => [...prev, nextAssistantMessage]);
-    } catch (error) {
-      console.error('Error:', error);
+    } catch {
+      console.error('Failed to process request');
       setToast({
         message: 'Failed to process request. Please try again.',
         type: 'error'

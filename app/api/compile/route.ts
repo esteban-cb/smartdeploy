@@ -16,34 +16,21 @@ const findOpenZeppelinContract = (path: string): string | null => {
 };
 
 // Helper to get all imported files
-const findImports = (importPath: string): { contents: string } | { error: string } => {
-  if (importPath.startsWith('@openzeppelin/')) {
-    const contents = findOpenZeppelinContract(importPath);
+const findImports = (path: string) => {
+  if (path.startsWith('@openzeppelin/')) {
+    const contents = findOpenZeppelinContract(path);
     if (contents) {
       return { contents };
     }
   }
-  return { error: `File not found: ${importPath}` };
+  return { error: `File not found: ${path}` };
 };
-
-interface CompilerError {
-  severity: string;
-  formattedMessage: string;
-}
-
-interface CompilerErrorResponse {
-  response?: {
-    status: number;
-    data: unknown;
-  };
-  message: string;
-}
 
 export async function POST(request: Request) {
   try {
     const { code } = await request.json();
 
-    const input: solc.CompilerInput = {
+    const input = {
       language: 'Solidity',
       sources: {
         'contract.sol': {
@@ -64,13 +51,13 @@ export async function POST(request: Request) {
     };
 
     const output = JSON.parse(
-      solc.compile(JSON.stringify(input), { import: findImports })
-    ) as solc.CompilerOutput;
+      solc.compile(JSON.stringify(input), findImports)
+    );
 
-    if (output.errors?.some(error => error.severity === 'error')) {
+    if (output.errors?.some((error: { severity: string }) => error.severity === 'error')) {
       const errorMessage = output.errors
-        .filter(error => error.severity === 'error')
-        .map(error => error.message)
+        ?.filter((error: { severity: string; message: string }) => error.severity === 'error')
+        .map((error: { message: string }) => error.message)
         .join('\n');
 
       return NextResponse.json(

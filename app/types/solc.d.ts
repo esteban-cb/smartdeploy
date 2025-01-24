@@ -1,6 +1,6 @@
 declare module 'solc' {
   interface ImportCallback {
-    import: (path: string) => { contents: string } | { error: string };
+    (path: string): { contents: string } | { error: string };
   }
 
   interface CompilerInput {
@@ -27,7 +27,7 @@ declare module 'solc' {
     contracts: {
       [key: string]: {
         [key: string]: {
-          abi: any[];
+          abi: unknown[];
           evm: {
             bytecode: {
               object: string;
@@ -43,14 +43,12 @@ declare module 'solc' {
     }>;
   }
 
-  interface Compiler {
-    compile: (input: string, callback?: ImportCallback) => string;
-  }
-
+  function compile(input: string, readCallback?: ImportCallback): string;
+  
   const solc: {
-    compile: (input: string, callback?: ImportCallback) => string;
-    loadRemoteVersion: (version: string, callback: (err: Error | null, compiler?: Compiler) => void) => void;
+    compile: (input: string, readCallback?: ImportCallback) => string;
+    loadRemoteVersion: (version: string, callback: (err: Error | null, compiler?: any) => void) => void;
   };
-
-  export default solc;
+  
+  export = solc;
 } 

@@ -44,6 +44,16 @@ IMPORTANT NOTES:
 - Include proper events for all state changes
 - Use require or custom errors for validation`;
 
+// Add interface for xAI API response
+interface XAIResponse {
+  choices: Array<{
+    message: {
+      role: string;
+      content: string;
+    };
+  }>;
+}
+
 interface APIErrorResponse {
   response?: {
     status: number;
@@ -70,8 +80,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Call xAI API
-    const response = await axios.post(
+    // Call xAI API with type assertion
+    const response = await axios.post<XAIResponse>(
       'https://api.x.ai/v1/chat/completions',
       {
         messages: enhancedMessages,
@@ -87,7 +97,7 @@ export async function POST(request: Request) {
       }
     );
 
-    // Extract and return the response content
+    // Now TypeScript knows the shape of response.data
     return NextResponse.json(response.data.choices[0].message);
 
   } catch (error) {

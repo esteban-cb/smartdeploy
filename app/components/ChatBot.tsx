@@ -161,7 +161,7 @@ export default function ChatBot() {
           
           // Pre-fill the input with the connected address
           setInput(address);
-        } catch (error) {
+        } catch {
           // If we can't get the address, show a simple prompt
           setMessages(prev => [...prev, {
             role: 'assistant',
